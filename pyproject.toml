@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openwhoop"
+version = "0.1.0"
+description = "Open-source Whoop 4.0 clone — BLE protocol, health algorithms, and analytics"
+requires-python = ">=3.10"
+dependencies = [
+    "bleak>=0.22",
+    "numpy>=1.21",
+    "scipy>=1.9",
+    "sqlalchemy>=2.0",
+    "click>=8.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+viz = ["plotly", "matplotlib"]
+ml = ["neurokit2", "scikit-learn"]
+
+[project.scripts]
+openwhoop = "openwhoop.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["openwhoop*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
