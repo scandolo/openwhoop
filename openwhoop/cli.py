@@ -46,11 +46,12 @@ def scan(timeout: float) -> None:
 @click.option("--db", default=None, help="Database URL (default: from .env).")
 @click.option("--no-high-freq", is_flag=True, help="Disable high-frequency sync.")
 @click.option(
-    "--peek", is_flag=True,
-    help="Download without ACKing trim pointer. Strap retains data so the "
-         "official Whoop app can also sync it to the cloud (companion mode).",
+    "--destructive", is_flag=True,
+    help="ACK the trim pointer after download, deleting data from the strap. "
+         "By default, data is preserved so the official Whoop app can also "
+         "sync it to the cloud (companion mode).",
 )
-def download(device: str, db: str | None, no_high_freq: bool, peek: bool) -> None:
+def download(device: str, db: str | None, no_high_freq: bool, destructive: bool) -> None:
     """Download history from Whoop to database."""
     from .ble.scanner import find_device_by_name
     from .ble.client import WhoopClient
@@ -66,7 +67,8 @@ def download(device: str, db: str | None, no_high_freq: bool, peek: bool) -> Non
         client = WhoopClient(ble_device)
         await client.connect()
 
-        mode = "peek (companion)" if peek else "normal"
+        peek = not destructive
+        mode = "companion (strap data preserved)" if peek else "destructive (strap data will be deleted)"
         click.echo(f"Connected. Downloading history in {mode} mode...")
         count = 0
 
@@ -94,7 +96,7 @@ def download(device: str, db: str | None, no_high_freq: bool, peek: bool) -> Non
             ts_str = datetime.fromtimestamp(latest, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             click.echo(f"Latest reading: {ts_str}")
         if peek:
-            click.echo("Peek mode: strap data preserved. Open Whoop app to sync to cloud.")
+            click.echo("Strap data preserved. Open Whoop app to sync same data to cloud.")
 
     asyncio.run(_download())
 
