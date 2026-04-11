@@ -445,16 +445,21 @@ Best open-source models for PPG+accelerometer:
 ```
 
 ### Implementation Priority
-1. Port 96-byte packet decoder (V12/V24) from Rust → Python
-2. Set up SQLite database schema
-3. Add high-freq sync to BLE client
-4. Port sleep detection algorithm
-5. Port health metrics (stress, strain, SpO2, skin temp)
-6. Build recovery score (formula-based)
-7. Web dashboard with real-time + historical views
-8. Sleep stage classification (ML)
-9. Activity type recognition (ML)
-10. Personalized baselines and adaptive scoring
+
+**Completed (v0.1.0):**
+1. ~~Port 96-byte packet decoder (V12/V24) from Rust → Python~~
+2. ~~Set up SQLite database schema~~
+3. ~~Add high-freq sync to BLE client~~
+4. ~~Port sleep detection algorithm~~
+5. ~~Port health metrics (stress, strain, SpO2, skin temp)~~
+
+**Next — Companion Mode (see STRATEGY.md):**
+6. Add peek mode (non-destructive download, skip trim ACK)
+7. Integrate Whoop Cloud API (OAuth 2.0, pull recovery/sleep/strain scores)
+8. Build paired dataset pipeline (raw local features + cloud labels)
+9. Train reverse-engineered models (recovery, sleep staging, strain)
+10. Web dashboard with real-time + historical views
+11. Personalized baselines and adaptive scoring
 
 ---
 
@@ -479,6 +484,21 @@ Best open-source models for PPG+accelerometer:
 - Erase history: `FORCE_TRIM` (cmd 25)
 - Change BLE name: `SET_ADVERTISING_NAME` (cmd 140)
 - Select wrist: `SELECT_WRIST` (cmd 123)
+
+---
+
+---
+
+## 11. Strategy: Companion Mode
+
+OpenWhoop is **not a Whoop Cloud replacement** — it is a companion tool. The strategy is to run alongside the official Whoop app, collecting raw sensor data locally while Whoop Cloud processes the same data with their ML pipeline. By pairing our raw 1Hz inputs with Whoop's processed outputs, we build a labeled training dataset to reverse-engineer their algorithms.
+
+Key mechanisms:
+- **Peek mode**: download data without ACKing the trim pointer, so the strap preserves data for the official app to also sync
+- **Cloud API integration**: pull Whoop's processed scores (recovery, sleep stages, strain) via their developer API
+- **Paired dataset**: match local 1Hz sensor readings to cloud-computed daily scores for model training
+
+See **STRATEGY.md** for the full plan, implementation roadmap, and data volume estimates.
 
 ---
 
