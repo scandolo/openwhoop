@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Sequence
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from ..config import DATABASE_URL
@@ -30,27 +30,82 @@ class DatabaseHandler:
 
     # ── Heart rate ───────────────────────────────────────────────────
 
-    def upsert_readings(self, readings: Sequence[HistoryReading]) -> int:
-        """Batch upsert heart rate readings. Returns count of new rows."""
+    # Sensor columns that may be NULL in generic packets but present in V12/V24.
+    _SENSOR_COLS = (
+        "ppg_green", "ppg_red_ir", "gravity_x", "gravity_y", "gravity_z",
+        "skin_contact", "spo2_red", "spo2_ir", "skin_temp_raw",
+        "ambient_light", "resp_rate_raw", "signal_quality", "skin_temp",
+    )
+
+    def upsert_readings(self, readings: Sequence[HistoryReading]) -> dict:
+        """Batch upsert heart rate readings.
+
+        Inserts new readings and upgrades existing rows when the incoming
+        packet has richer sensor data (e.g. V12/V24 replacing a generic
+        packet). Computed columns (activity, stress, spo2 score) are never
+        overwritten.
+
+        Returns:
+            Dict with keys: inserted, updated, skipped, latest_ts.
+        """
         inserted = 0
+        updated = 0
+        skipped = 0
+        latest_ts: int | None = None
+
+        if not readings:
+            return {"inserted": 0, "updated": 0, "skipped": 0, "latest_ts": None}
+
         with self.session() as s:
-            existing = set(
-                (row.timestamp, row.subseconds)
-                for row in s.execute(
-                    select(HeartRateRecord.timestamp, HeartRateRecord.subseconds).where(
-                        HeartRateRecord.timestamp.in_(
-                            [r.unix_ts for r in readings]
-                        )
+            # Load existing records that overlap with incoming timestamps.
+            existing_map: dict[tuple[int, int], HeartRateRecord] = {}
+            for rec in s.scalars(
+                select(HeartRateRecord).where(
+                    HeartRateRecord.timestamp.in_(
+                        [r.unix_ts for r in readings]
                     )
                 )
-            )
+            ):
+                existing_map[(rec.timestamp, rec.subseconds)] = rec
 
-            seen = set()
+            seen: set[tuple[int, int]] = set()
             for r in readings:
                 key = (r.unix_ts, r.subseconds)
-                if key in existing or key in seen:
+
+                # Track latest timestamp across all received readings.
+                if latest_ts is None or r.unix_ts > latest_ts:
+                    latest_ts = r.unix_ts
+
+                # Skip duplicates within the same batch.
+                if key in seen:
+                    skipped += 1
                     continue
                 seen.add(key)
+
+                existing = existing_map.get(key)
+                if existing is not None:
+                    # Row exists. Upgrade sensor columns if the new reading
+                    # has richer data (V12/V24) and the existing row doesn't.
+                    if r.sensor and existing.gravity_x is None:
+                        existing.ppg_green = r.sensor.ppg_green
+                        existing.ppg_red_ir = r.sensor.ppg_red_ir
+                        existing.gravity_x = r.sensor.gravity_x
+                        existing.gravity_y = r.sensor.gravity_y
+                        existing.gravity_z = r.sensor.gravity_z
+                        existing.skin_contact = r.sensor.on_wrist
+                        existing.spo2_red = r.sensor.spo2_red
+                        existing.spo2_ir = r.sensor.spo2_ir
+                        existing.skin_temp_raw = r.sensor.skin_temp_raw
+                        existing.ambient_light = r.sensor.ambient_light
+                        existing.resp_rate_raw = r.sensor.resp_rate_raw
+                        existing.signal_quality = r.sensor.signal_quality
+                        existing.skin_temp = r.sensor.skin_temp_celsius
+                        updated += 1
+                    else:
+                        skipped += 1
+                    continue
+
+                # New reading — insert.
                 rec = HeartRateRecord(
                     timestamp=r.unix_ts,
                     subseconds=r.subseconds,
@@ -74,7 +129,13 @@ class DatabaseHandler:
                 s.add(rec)
                 inserted += 1
             s.commit()
-        return inserted
+
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "skipped": skipped,
+            "latest_ts": latest_ts,
+        }
 
     def get_hr_range(
         self, start_ts: int, end_ts: int
@@ -97,6 +158,35 @@ class DatabaseHandler:
                     select(HeartRateRecord).order_by(HeartRateRecord.timestamp)
                 )
             )
+
+    def get_latest_timestamp(self) -> int | None:
+        """Return the most recent timestamp in the database, or None if empty."""
+        with self.session() as s:
+            return s.scalar(select(func.max(HeartRateRecord.timestamp)))
+
+    def get_reading_count(self) -> int:
+        """Return the total number of heart rate records."""
+        with self.session() as s:
+            return s.scalar(select(func.count(HeartRateRecord.id))) or 0
+
+    def get_stats(self) -> dict:
+        """Return summary statistics about stored data."""
+        with self.session() as s:
+            total = s.scalar(select(func.count(HeartRateRecord.id))) or 0
+            with_sensor = s.scalar(
+                select(func.count(HeartRateRecord.id)).where(
+                    HeartRateRecord.gravity_x.isnot(None)
+                )
+            ) or 0
+            min_ts = s.scalar(select(func.min(HeartRateRecord.timestamp)))
+            max_ts = s.scalar(select(func.max(HeartRateRecord.timestamp)))
+            return {
+                "total_readings": total,
+                "with_sensor_data": with_sensor,
+                "generic_only": total - with_sensor,
+                "earliest_ts": min_ts,
+                "latest_ts": max_ts,
+            }
 
     # ── Sleep cycles ─────────────────────────────────────────────────
 

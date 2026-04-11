@@ -45,7 +45,12 @@ def scan(timeout: float) -> None:
 @click.option("--device", "-d", required=True, help="Device name (e.g. 'WHOOP XXXXXXXXX').")
 @click.option("--db", default=None, help="Database URL (default: from .env).")
 @click.option("--no-high-freq", is_flag=True, help="Disable high-frequency sync.")
-def download(device: str, db: str | None, no_high_freq: bool) -> None:
+@click.option(
+    "--peek", is_flag=True,
+    help="Download without ACKing trim pointer. Strap retains data so the "
+         "official Whoop app can also sync it to the cloud (companion mode).",
+)
+def download(device: str, db: str | None, no_high_freq: bool, peek: bool) -> None:
     """Download history from Whoop to database."""
     from .ble.scanner import find_device_by_name
     from .ble.client import WhoopClient
@@ -61,7 +66,8 @@ def download(device: str, db: str | None, no_high_freq: bool) -> None:
         client = WhoopClient(ble_device)
         await client.connect()
 
-        click.echo("Connected. Downloading history...")
+        mode = "peek (companion)" if peek else "normal"
+        click.echo(f"Connected. Downloading history in {mode} mode...")
         count = 0
 
         def on_reading(r):
@@ -71,13 +77,24 @@ def download(device: str, db: str | None, no_high_freq: bool) -> None:
                 click.echo(f"  {count} readings...")
 
         readings = await client.sync_history(
-            high_freq=not no_high_freq, on_reading=on_reading
+            high_freq=not no_high_freq, peek=peek, on_reading=on_reading
         )
         await client.disconnect()
 
         handler = DatabaseHandler(db)
-        inserted = handler.upsert_readings(readings)
-        click.echo(f"Done: {len(readings)} readings downloaded, {inserted} new rows inserted.")
+        result = handler.upsert_readings(readings)
+        inserted = result["inserted"]
+        updated = result["updated"]
+        skipped = result["skipped"]
+        latest = result["latest_ts"]
+
+        click.echo(f"Done: {len(readings)} received, {inserted} new, {updated} updated, {skipped} unchanged.")
+        if latest:
+            from datetime import datetime, timezone
+            ts_str = datetime.fromtimestamp(latest, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            click.echo(f"Latest reading: {ts_str}")
+        if peek:
+            click.echo("Peek mode: strap data preserved. Open Whoop app to sync to cloud.")
 
     asyncio.run(_download())
 
@@ -122,8 +139,11 @@ def import_dump(file: str, db: str | None) -> None:
     click.echo(f"Parsed {len(readings)} readings from {file}")
 
     handler = DatabaseHandler(db)
-    inserted = handler.upsert_readings(readings)
-    click.echo(f"Inserted {inserted} new rows.")
+    result = handler.upsert_readings(readings)
+    click.echo(
+        f"Done: {result['inserted']} new, {result['updated']} updated, "
+        f"{result['skipped']} unchanged."
+    )
 
 
 @cli.command("detect-events")

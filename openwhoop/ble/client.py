@@ -108,12 +108,16 @@ class WhoopClient:
     async def sync_history(
         self,
         high_freq: bool = True,
+        peek: bool = False,
         on_reading: callable | None = None,
     ) -> list[HistoryReading]:
         """Download all historical data from the strap.
 
         Args:
             high_freq: Use high-frequency sync (cmd 96) for ~90x faster download.
+            peek: If True, download data without ACKing the trim pointer.
+                  The strap retains the data so the official Whoop app can
+                  also sync it to the cloud. Enables companion mode.
             on_reading: Optional callback(reading) for progress.
 
         Returns:
@@ -173,10 +177,17 @@ class WhoopClient:
                 if MetadataType(meta.cmd) == MetadataType.HISTORY_COMPLETE:
                     break
 
-                # ACK the batch with trim pointer
+                # ACK the batch with trim pointer (skip in peek mode)
                 if MetadataType(meta.cmd) == MetadataType.HISTORY_END:
                     trim = struct.unpack_from("<I", meta.data, 10)[0]
-                    await self._send(WhoopPacket.history_ack(trim))
+                    if peek:
+                        log.info(
+                            "Peek mode: skipping trim ACK (pointer=%d). "
+                            "Strap will retain data for official app sync.",
+                            trim,
+                        )
+                    else:
+                        await self._send(WhoopPacket.history_ack(trim))
 
         if high_freq:
             await self.exit_high_freq_sync()
