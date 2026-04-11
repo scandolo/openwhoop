@@ -61,7 +61,7 @@ This is the **label set** — the ground truth outputs we want our models to lea
 
 ---
 
-## Peek Mode: Non-Destructive Download
+## Companion Mode: Non-Destructive Download (Default)
 
 ### The Problem
 
@@ -74,13 +74,26 @@ The Whoop strap's BLE history protocol uses a **trim pointer acknowledgment** to
 
 If OpenWhoop ACKs the trim pointer, the data is gone from the strap. When the official Whoop app connects next, that data won't be there — Whoop Cloud never receives it, and we lose the label data.
 
+### Why We Skip the ACK (The Core Design Decision)
+
+The entire companion mode strategy depends on **not sending the trim pointer acknowledgment**. This is the single most important design decision in the codebase. By skipping the ACK:
+
+1. **The strap keeps its data** — it doesn't know we downloaded anything
+2. **The official Whoop app can sync the same data to the cloud** — producing Whoop's ML-processed scores (recovery, sleep stages, strain)
+3. **We get paired datasets** — raw 1Hz sensor data locally + Whoop's processed outputs via their Developer API
+4. **We can train our own models** — using Whoop's scores as ground-truth labels against our raw sensor features
+
+Without this, we'd have to choose: raw data (OpenWhoop) OR processed scores (Whoop Cloud). With it, we get both for the same time window.
+
+This is the default behavior. The `--destructive` CLI flag opts into the old behavior (ACK the trim pointer, delete data from strap) for cases where you don't need the cloud data.
+
 ### The Solution
 
-**Peek mode** (`--peek`): download and save all historical data locally, but **skip the trim pointer ACK**. The strap retains the data, and the official Whoop app can sync the same data to the cloud on its next connection.
+**Companion mode** (default): download and save all historical data locally, but **skip the trim pointer ACK**. The strap retains the data, and the official Whoop app can sync the same data to the cloud on its next connection.
 
 ```
 Daily workflow:
-  1. openwhoop download --peek -d "WHOOP XXX"   # save raw data locally, don't ACK
+  1. openwhoop download -d "WHOOP XXX"           # save raw data locally, don't ACK
   2. Open Whoop app on phone                     # syncs same data to cloud, ACKs trim
   3. openwhoop pull-cloud                        # pull Whoop's processed scores via API
   4. Both datasets now paired in local SQLite

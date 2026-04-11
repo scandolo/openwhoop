@@ -115,9 +115,14 @@ class WhoopClient:
 
         Args:
             high_freq: Use high-frequency sync (cmd 96) for ~90x faster download.
-            peek: If True, download data without ACKing the trim pointer.
-                  The strap retains the data so the official Whoop app can
-                  also sync it to the cloud. Enables companion mode.
+            peek: If True (default), download data without ACKing the trim
+                  pointer.  The strap retains the data so the official Whoop
+                  app can also sync it to the cloud.  This enables companion
+                  mode: we collect raw sensor data locally while Whoop Cloud
+                  processes the same data with their ML pipeline, producing
+                  paired datasets for algorithm reverse-engineering.
+                  Pass False (CLI --destructive) to ACK and delete data from
+                  the strap after download.
             on_reading: Optional callback(reading) for progress.
 
         Returns:
@@ -177,12 +182,23 @@ class WhoopClient:
                 if MetadataType(meta.cmd) == MetadataType.HISTORY_COMPLETE:
                     break
 
-                # ACK the batch with trim pointer (skip in peek mode)
+                # ACK the batch with trim pointer.
+                #
+                # By default (peek=True) we intentionally skip the ACK so the
+                # strap keeps its data.  This lets the official Whoop app sync
+                # the same readings to Whoop Cloud, giving us paired datasets:
+                # raw 1Hz sensor data locally + Whoop's ML-processed scores in
+                # the cloud.  We can then pull those cloud scores via the
+                # Developer API and train our own models against matched
+                # input/output pairs.  See STRATEGY.md for the full plan.
+                #
+                # Pass peek=False (CLI --destructive) to ACK and free the
+                # strap's 3-day rolling buffer, which is the original behavior.
                 if MetadataType(meta.cmd) == MetadataType.HISTORY_END:
                     trim = struct.unpack_from("<I", meta.data, 10)[0]
                     if peek:
                         log.info(
-                            "Peek mode: skipping trim ACK (pointer=%d). "
+                            "Companion mode: skipping trim ACK (pointer=%d). "
                             "Strap will retain data for official app sync.",
                             trim,
                         )
