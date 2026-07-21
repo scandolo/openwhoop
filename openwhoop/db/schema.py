@@ -108,6 +108,7 @@ class DailyScoreRecord(Base):
     spo2 = Column(Float)
     skin_temp = Column(Float)
     resp_rate = Column(Float)
+    stress = Column(Float)
 
 
 class PacketRecord(Base):

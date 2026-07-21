@@ -20,7 +20,7 @@ from ..protocol.constants import (
     PacketType,
     MetadataType,
 )
-from ..protocol.decoder import decode_historical
+from ..protocol.decoder import decode_historical, decode_realtime_hr
 from ..protocol.packet import WhoopPacket
 from .handlers import NotificationRouter
 
@@ -102,6 +102,41 @@ class WhoopClient:
 
     async def reboot(self) -> None:
         await self._send(WhoopPacket.reboot())
+
+    async def read_current_hr(self, timeout: float = 5.0) -> int | None:
+        """Enable real-time HR, grab one reading, then disable.
+
+        Returns the current BPM, or None if no valid reading was received
+        within the timeout. This is best-effort — the real-time packet
+        format is reverse-engineered and may not always decode correctly.
+        """
+        try:
+            await self.toggle_realtime_hr(True)
+            # Drain any stale data packets before waiting for a fresh one.
+            while not self._router.data_queue.empty():
+                self._router.data_queue.get_nowait()
+
+            deadline = asyncio.get_event_loop().time() + timeout
+            while asyncio.get_event_loop().time() < deadline:
+                remaining = deadline - asyncio.get_event_loop().time()
+                try:
+                    pkt = await asyncio.wait_for(
+                        self._router.data_queue.get(), timeout=remaining
+                    )
+                except asyncio.TimeoutError:
+                    break
+                bpm = decode_realtime_hr(pkt)
+                if bpm is not None:
+                    return bpm
+            return None
+        except Exception:
+            log.debug("read_current_hr failed", exc_info=True)
+            return None
+        finally:
+            try:
+                await self.toggle_realtime_hr(False)
+            except Exception:
+                pass
 
     # ── History download ─────────────────────────────────────────────
 
@@ -202,6 +237,9 @@ class WhoopClient:
                             "Strap will retain data for official app sync.",
                             trim,
                         )
+                        # Without an ACK the strap won't send HISTORY_COMPLETE,
+                        # so break out now instead of waiting forever.
+                        break
                     else:
                         await self._send(WhoopPacket.history_ack(trim))
 

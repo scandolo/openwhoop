@@ -170,6 +170,22 @@ def decode_historical(pkt: WhoopPacket) -> HistoryReading:
     return decode_generic(pkt)
 
 
+def decode_realtime_hr(pkt: WhoopPacket) -> int | None:
+    """Attempt to extract BPM from a real-time data packet.
+
+    REALTIME_DATA (type 40) packets stream live HR/RR at 1Hz.
+    The payload layout is believed to mirror the generic historical format
+    with HR at byte offset 14. Returns None if the packet cannot be decoded.
+    """
+    if pkt.type != PacketType.REALTIME_DATA or len(pkt.data) < 15:
+        return None
+    try:
+        bpm = pkt.data[14]
+        return bpm if 20 <= bpm <= 250 else None
+    except (IndexError, struct.error):
+        return None
+
+
 def parse_binary_dump(data: bytes) -> list[HistoryReading]:
     """Parse a raw binary dump file (concatenated framed packets) into readings."""
     readings = []

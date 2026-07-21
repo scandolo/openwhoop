@@ -11,3 +11,4 @@ load_dotenv(_env_path)
 
 WHOOP_DEVICE_NAME: str = os.getenv("WHOOP_DEVICE_NAME", "")
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///openwhoop.db")
+TIMEZONE: str = os.getenv("TIMEZONE", "UTC")

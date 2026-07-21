@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -223,13 +225,60 @@ class DatabaseHandler:
                 )
             )
             if existing:
-                for col in ["recovery", "strain", "sleep_score", "hrv", "rhr", "spo2", "skin_temp", "resp_rate"]:
+                for col in ["recovery", "strain", "sleep_score", "hrv", "rhr", "spo2", "skin_temp", "resp_rate", "stress"]:
                     val = getattr(score, col)
                     if val is not None:
                         setattr(existing, col, val)
             else:
                 s.add(score)
             s.commit()
+
+    def get_day_boundaries(
+        self, tz_name: str = "UTC"
+    ) -> list[tuple[str, int, int]]:
+        """Return (date_str, start_ts, end_ts) for each calendar day with data.
+
+        Computes midnight-to-midnight boundaries in the given timezone for every
+        day between the earliest and latest heart rate records.
+        """
+        with self.session() as s:
+            min_ts = s.scalar(select(func.min(HeartRateRecord.timestamp)))
+            max_ts = s.scalar(select(func.max(HeartRateRecord.timestamp)))
+
+        if min_ts is None or max_ts is None:
+            return []
+
+        tz = ZoneInfo(tz_name)
+        start_dt = datetime.fromtimestamp(min_ts, tz=tz).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        end_dt = datetime.fromtimestamp(max_ts, tz=tz).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        days: list[tuple[str, int, int]] = []
+        current = start_dt
+        while current <= end_dt:
+            next_day = current + timedelta(days=1)
+            date_str = current.strftime("%Y-%m-%d")
+            day_start_ts = int(current.timestamp())
+            day_end_ts = int(next_day.timestamp()) - 1
+            days.append((date_str, day_start_ts, day_end_ts))
+            current = next_day
+
+        return days
+
+    def get_daily_scores(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> list[DailyScoreRecord]:
+        """Get daily score records, optionally filtered by date range."""
+        with self.session() as s:
+            q = select(DailyScoreRecord).order_by(DailyScoreRecord.date)
+            if start_date:
+                q = q.where(DailyScoreRecord.date >= start_date)
+            if end_date:
+                q = q.where(DailyScoreRecord.date <= end_date)
+            return list(s.scalars(q))
 
     # ── Packet log ───────────────────────────────────────────────────
 
