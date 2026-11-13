@@ -4,7 +4,6 @@
   "private": true,
   "description": "Open-source WHOOP 4.0 companion: Web Bluetooth sync, local scoring, self-hostable dashboard.",
   "type": "module",
-  "license": "MIT",
   "engines": {
     "node": ">=22.18"
   },

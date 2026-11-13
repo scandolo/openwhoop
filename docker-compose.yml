@@ -1,0 +1,16 @@
+services:
+  openwhoop:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - openwhoop-data:/data
+    environment:
+      # Optional: set the password here instead of the first-run setup page
+      OPENWHOOP_PASSWORD: ${OPENWHOOP_PASSWORD:-}
+      # Public https URL when behind a proxy (used for Strava/WHOOP OAuth callbacks)
+      PUBLIC_URL: ${PUBLIC_URL:-}
+    restart: unless-stopped
+
+volumes:
+  openwhoop-data:

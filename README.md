@@ -1,146 +1,133 @@
 # OpenWhoop
 
-Open-source Whoop 4.0 client. Connects to your strap over BLE, downloads all historical data, and runs the health algorithms locally — no cloud, no subscription.
+Your WHOOP 4.0, scored on your own machine. OpenWhoop reads the strap over
+Bluetooth from the browser, computes recovery, sleep, strain and stress with
+models calibrated against real WHOOP data, and shows them in a familiar
+three-dial dashboard. Run it on your laptop, or host your own instance behind a
+password.
 
-Ported from [openwhoop](https://github.com/openwhoop/openwhoop) (Rust) and [whoomp](https://github.com/jogolden/whoomp) (JS).
+![Today](docs/images/today.png)
 
-## FOR HUMANS — WHAT IS OPENWHOOP
+> Independent open-source project. Not affiliated with, endorsed by or
+> connected to WHOOP, Inc. Scores are estimates for personal insight, not
+> medical advice.
 
-### What it does
+## What you get
 
-- **BLE sync**: Connects to your Whoop 4.0 over Bluetooth, downloads full sensor history (HR, RR intervals, PPG, accelerometer, SpO2, skin temperature)
-- **High-frequency sync**: Uses command 96/97 for ~90x faster downloads than the normal BLE rate
-- **Offline analysis**: Sleep detection, stress (Baevsky SI), strain (Edwards TRIMP), SpO2 (Beer-Lambert), skin temperature, HRV (RMSSD/SDNN/frequency-domain)
-- **Local storage**: Everything goes into a SQLite database you own
+- **Recovery, sleep, strain and stress.** These are models fitted to 4,000+
+  nights of real WHOOP exports. On people the model never saw, recovery tracks
+  WHOOP's own score day to day with a median correlation of 0.93. How each
+  score works, and how well it matches: [docs/algorithms.md](docs/algorithms.md).
+- **Sleep staging, sleep need, debt, consistency, and a sleep planner** that
+  tells you when to go to bed.
+- **A smart haptic alarm** that wakes you in light sleep inside your window,
+  once your sleep goal is met or you're "in the green". The strap's own alarm
+  is set as a backup.
+- **Haptic automations** while the strap is connected:
+  - a nudge when stress stays high
+  - two taps when you hit today's strain target
+  - a bedtime buzz
+  - double-tap the strap to start paced breathing with live HRV
+- **A journal with insights** that shows how alcohol, late meals, screens and
+  your own custom questions move your recovery, with confidence intervals.
+- **Live workouts** with live strain and heart-rate zones.
+- **Companion mode.** Keep using the official WHOOP app: OpenWhoop reads
+  without freeing the strap's memory, can import WHOOP's own scores to show
+  next to yours, and calibrates itself to you.
+- **Open integrations:**
+  - Strava import, plus optional strain in your activity descriptions
+  - signed webhooks
+  - scoped API tokens
+  - WHOOP-format CSV export
 
-### Quick start
+  See [docs/integrations.md](docs/integrations.md).
+- **Your data stays with you.** One SQLite file. The raw strap bytes are
+  archived, so data can be re-decoded as the protocol is better understood.
 
-```bash
-# Install
-pip install -e ".[dev]"
-
-# Copy and edit the config
-cp .env.example .env
-
-# Scan for your device
-openwhoop scan
-
-# Download history (uses high-freq sync by default)
-openwhoop download -d "WHOOP XXXXXXXXX"
-
-# Run analysis
-openwhoop detect-events          # Sleep detection
-openwhoop calculate-stress       # Baevsky Stress Index
-openwhoop calculate-spo2         # Blood oxygen
-openwhoop calculate-skin-temp    # Skin temperature
-openwhoop calculate-strain       # Edwards TRIMP strain score
-```
-
-You can also import raw binary dumps from whoomp:
-
-```bash
-openwhoop import dump.bin
-```
-
-### Requirements
-
-- Python 3.10+
-- A Whoop 4.0 strap
-- Bluetooth (on macOS, uses device name instead of MAC address)
-
-### CLI commands
-
-| Command | What it does |
+| | |
 |---|---|
-| `scan` | Find nearby Whoop devices |
-| `download -d NAME` | Sync history from strap to SQLite |
-| `info -d NAME` | Show battery, firmware version |
-| `import FILE` | Import raw binary dump |
-| `detect-events` | Detect sleep periods from stored data |
-| `calculate-stress` | Baevsky Stress Index from RR intervals |
-| `calculate-spo2` | SpO2 from red/IR sensor data |
-| `calculate-skin-temp` | Average skin temperature |
-| `calculate-strain` | Edwards TRIMP strain score |
+| ![Sleep](docs/images/sleep.png) | ![Journal](docs/images/journal.png) |
 
----
+## Quick start
 
-## FOR LLMs — HOW TO WORK IN THIS CODEBASE
-
-### Project structure
-
-```
-openwhoop/
-├── protocol/          # BLE packet layer — framing, CRC, constants
-│   ├── constants.py   #   GATT UUIDs, PacketType/CommandNumber/EventNumber enums
-│   ├── crc.py         #   CRC-8 (poly=0x07) and CRC-32 (zlib)
-│   ├── packet.py      #   WhoopPacket: parse/create/frame, factory methods for all commands
-│   ├── assembler.py   #   Multi-notification packet reassembly
-│   └── decoder.py     #   Decode V12/V24 (96-byte full sensor) and generic (HR+RR) packets
-├── ble/               # Async BLE communication (bleak)
-│   ├── scanner.py     #   Device discovery (scan_for_whoop, find_device_by_name)
-│   ├── client.py      #   WhoopClient: connect, send commands, sync_history loop
-│   └── handlers.py    #   NotificationRouter: routes BLE notifications to typed queues
-├── algos/             # Health algorithms (all pure functions, no I/O)
-│   ├── activity.py    #   Gravity-based sleep/active/rest classification (rolling 15min window)
-│   ├── sleep.py       #   Sleep cycle detection + merging + scoring
-│   ├── sleep_consistency.py
-│   ├── hrv.py         #   RMSSD, SDNN, frequency-domain LF/HF
-│   ├── stress.py      #   Baevsky Stress Index (histogram-based)
-│   ├── strain.py      #   Edwards TRIMP (5-zone time-in-zone)
-│   ├── spo2.py        #   Beer-Lambert SpO2 from red/IR ratio
-│   └── temperature.py #   Skin temp conversion (raw × 0.04)
-├── db/                # SQLite persistence (SQLAlchemy ORM)
-│   ├── schema.py      #   Tables: heart_rate, sleep_cycles, activities, daily_scores, packets
-│   └── database.py    #   DatabaseHandler: upsert_readings, queries
-├── models.py          # Core dataclasses: HistoryReading, SensorData, SleepCycle, ImuPacket
-├── config.py          # Loads .env (WHOOP_DEVICE_NAME, DATABASE_URL)
-└── cli.py             # Click CLI entry point — all commands defined here
-tests/
-├── test_packet.py     # Packet framing, parse/serialize roundtrip
-├── test_crc.py        # CRC-8 and CRC-32 validation
-├── test_decoder.py    # V12/V24 and generic packet decoding
-├── test_algorithms.py # Sleep detection, HRV, stress, strain, SpO2
-└── test_db.py         # Database insert/query
-```
-
-### Key architectural decisions
-
-- **Packet flow**: Raw BLE bytes → `assembler.py` reassembles multi-notification packets → `packet.py` validates CRC and parses → `decoder.py` extracts sensor data → `models.py` dataclasses
-- **V12/V24 packets** are the important ones: `seq=12` or `seq=24`, payload >= 77 bytes. These carry full sensor data (PPG, gravity, SpO2, skin temp, etc.) at documented byte offsets in `decoder.py`
-- **Generic packets** only have HR + RR intervals (from older firmware or non-sensor commands)
-- **Algorithms are pure functions** in `algos/` — they take lists of readings and return results. No database or BLE dependencies. Easy to test and extend.
-- **History sync** works in batches: strap sends HISTORY_START → data packets → HISTORY_END (with trim pointer) → client ACKs → repeat until HISTORY_COMPLETE
-
-### Protocol details (you will need these)
-
-- Packet frame: `SOF(0xAA) + u16LE length + CRC-8(length bytes) + payload + CRC-32(payload)`
-- CRC-8: polynomial 0x07, init 0x00, over the 2 length bytes only
-- CRC-32: standard zlib `crc32()` over the payload
-- All multi-byte values are little-endian except IMU samples (big-endian i16)
-- 68 commands and 49 events are defined in `constants.py`
-- High-freq sync (cmd 96/97) changes the BLE connection interval for ~90x faster data transfer
-
-### How to run tests
+You need Node 22.18 or newer, and Chrome or Edge on a computer or an Android
+phone (for Web Bluetooth).
 
 ```bash
-pip install -e ".[dev]"
-pytest
+npm install
+npm run build
+npm start            # → http://localhost:8787
 ```
 
-### Common tasks and where to edit
+Open it, go to **Strap → Connect**, and pick your WHOOP. Quit the official app
+first, or turn off your phone's Bluetooth: the strap talks to one device at a
+time. Your first recovery appears after three nights.
 
-| Task | Files to touch |
-|---|---|
-| Add a new BLE command | `protocol/packet.py` (factory method) + `protocol/constants.py` (if new cmd ID) + `ble/client.py` (high-level method) |
-| Add a new algorithm | `algos/new_algo.py` + `cli.py` (new Click command) + `tests/test_algorithms.py` |
-| Change DB schema | `db/schema.py` (ORM model) + `db/database.py` (queries) |
-| Decode a new packet type | `protocol/decoder.py` + `protocol/constants.py` (PacketType) |
-| Add a new sensor field | `models.py` (SensorData) + `protocol/decoder.py` (byte offset) + `db/schema.py` (column) |
+**No strap at hand?** `npm run demo` starts the app on 45 days of simulated
+data in `./data-demo`. Your real data directory is never touched.
 
-### Dependencies
+## On your phone
 
-- `bleak` — async BLE communication
-- `numpy` / `scipy` — signal processing in algorithms
-- `sqlalchemy` — SQLite ORM
-- `click` — CLI framework
-- `python-dotenv` — .env config loading
+OpenWhoop is an installable web app (PWA):
+
+- **Android (Chrome):** open your instance, then menu → *Install app*.
+  Everything works, including Bluetooth sync, the alarm and haptics.
+- **iPhone:** *Share → Add to Home Screen* installs the dashboard, which is
+  fine for checking your scores. Safari has no Web Bluetooth, so the strap
+  can't sync from an iPhone. Sync from a computer, an Android phone, or the
+  Bluefy browser on iOS, which supports Web Bluetooth.
+
+## Self-hosting
+
+```bash
+docker compose up -d   # then open the setup link from `docker compose logs`
+```
+
+Railway, Fly.io and VPS + Caddy recipes are in
+[docs/self-hosting.md](docs/self-hosting.md). A hosted instance needs HTTPS so
+the browser allows Bluetooth.
+
+## How it works
+
+```
+Browser (Web Bluetooth)  ──frames──▶  Server (Node + SQLite)  ──▶  Web app
+  reassembles packets,              archives raw frames,          dials, charts,
+  uploads each batch,               decodes 1 Hz records,         journal, modes
+  acks only after it's stored       scores sleeps/cycles
+  (or never, in companion mode)     webhooks · integrations · API
+```
+
+- Protocol notes, test vectors and known unknowns: [docs/protocol.md](docs/protocol.md)
+- Score models and their sources: [docs/algorithms.md](docs/algorithms.md)
+- Fit report: [docs/calibration.md](docs/calibration.md). Re-run it on your own
+  WHOOP export with `npm run calibrate -- <folder> --write`.
+
+## Development
+
+```bash
+npm run dev        # API on :8787 with --watch, Vite on :5173
+npm test           # protocol, algorithms, pipeline, API
+npm run check      # typecheck + tests + build
+```
+
+Contributor and agent guide: [AGENTS.md](AGENTS.md).
+
+## Limitations
+
+- WHOOP 4.0 only. The 5.0/MG strap uses different framing and record versions
+  (documented in [docs/protocol.md](docs/protocol.md)). Not supported yet.
+- No SpO₂ on 4.0: the raw channels don't separate red from IR. Skin
+  temperature is shown as a deviation, and is experimental.
+- Sleep staging is physiology-based, not trained on lab sleep studies.
+- Syncing runs at the strap's pace, about 10 records per second. Use **Keep
+  syncing** to stay current instead of catching up on days at once.
+
+## Credits
+
+Built on reverse-engineering work by:
+- [bWanShiTong/openwhoop](https://github.com/bWanShiTong/openwhoop) and the [reverse-engineering write-up](https://github.com/bWanShiTong/reverse-engineering-whoop-post)
+- [jogolden/whoomp](https://github.com/jogolden/whoomp)
+- [OpenStrap](https://github.com/OpenStrap/protocol)
+- [noop](https://github.com/ryanbr/noop)
+
+Calibration data credits are in [docs/algorithms.md](docs/algorithms.md#data).
