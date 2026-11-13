@@ -1,35 +1,12 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
+node_modules/
 dist/
-build/
-*.egg
-
-# Environment
-.env
-.venv/
-venv/
-env/
-
-# Database
+data/
 *.db
-
-# IDE
+*.db-shm
+*.db-wal
+.env
+.DS_Store
 .vscode/
 .idea/
-
-# OS
-.DS_Store
-
-# Testing
-.pytest_cache/
-htmlcov/
-.coverage
-
-# Claude
 .claude/
-
-# Whoomp fork (separate repo)
-whoomp/
+coverage/
