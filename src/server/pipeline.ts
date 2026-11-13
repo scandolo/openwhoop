@@ -181,8 +181,10 @@ export function currentPhysiology(db: Db, at = now()): Physiology {
     .filter((x): x is number => x !== null)
     .sort((a, b) => a - b);
   const rhr = rhrs.length ? rhrs[rhrs.length >> 1]! : 60;
-  const observed = get<{ m: number | null }>(db, "SELECT MAX(hr_max) m FROM minutes")?.m ?? null;
-  return physiology(profile, rhr, observed);
+  // A single artifact spike must not raise max HR (it would deflate every
+  // strain score): use the third-highest daily peak of 1-minute average HR.
+  const observed = get<{ m: number | null }>(db, "SELECT MAX(hr) m FROM minutes WHERE ts > ? AND state != 'off' GROUP BY ts / 86400 ORDER BY m DESC LIMIT 1 OFFSET 2", at - 180 * DAY)?.m ?? null;
+  return physiology(profile, rhr, observed === null ? null : Math.round(observed));
 }
 
 interface CycleRow {

@@ -158,9 +158,11 @@ onto WHOOP's scale as `6.3 + 0.81 × agreement` (**fitted**).
 
 - **Zones** (**published**): % of heart-rate reserve, `(HR − RHR) / (maxHR − RHR)`.
   Zone *k* starts at (40 + 10k)%, so zone 1 begins at 50% and zone 5 at 90%.
-- **Max HR** (**published**): Gellish, `192 − 0.007·age²`. It is raised when you
-  record a higher heart rate, or replaced by WHOOP's measured value when the
-  integration is connected.
+- **Max HR** (**published**): Gellish, `192 − 0.007·age²`. WHOOP raises it when
+  you record higher peaks. OpenWhoop raises it only to your third-highest daily
+  peak of 1-minute average heart rate, so one artifact spike can't deflate every
+  strain score (**design**, validated below). It is replaced by WHOOP's measured
+  value when the integration is connected.
 - **Resting HR**: the median of the last 14 nights.
 - **Load** (**fitted**): minutes in each zone × weight.
 
@@ -190,6 +192,13 @@ onto WHOOP's scale as `6.3 + 0.81 × agreement` (**fitted**).
 
 Auto-detected workouts: at least 12 minutes of sustained HR at 45% HRR or more
 (WHOOP drops activities shorter than 12 minutes, **published**).
+
+**Whole-day check.** On 158 days of one member's WHOOP heart rate (about 6.7 s
+resolution), OpenWhoop's day strain is within 1.15 of WHOOP's on held-out days,
+with r = 0.95. Refitting the ramp below zone 1 bought almost nothing (1.12), so
+it stays as designed. Using that member's single highest recorded heart rate
+(206) as max HR instead would have made every day read about 1.5 strain too
+low. That is why max HR is estimated robustly.
 
 ## Recovery
 
