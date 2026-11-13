@@ -7,8 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { get, run, type Db } from "../db.ts";
 import { scoreWorkout } from "../pipeline.ts";
-import type { Integration, IntegrationContext } from "./index.ts";
-import { integrationRow, saveIntegration } from "./index.ts";
+import { integrationRow, saveIntegration, type Integration, type IntegrationContext } from "./store.ts";
 
 const API = "https://www.strava.com/api/v3";
 const MARK = "— OpenWhoop";

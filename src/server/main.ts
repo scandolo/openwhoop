@@ -11,6 +11,8 @@ import { buildApi } from "./api.ts";
 import { onEvent } from "./events.ts";
 import { webhookListener } from "./integrations/webhooks.ts";
 import { INTEGRATIONS, integrationRow, runIntegration } from "./integrations/index.ts";
+import { setWhoopRescore } from "./integrations/whoop.ts";
+import { rescore } from "./pipeline.ts";
 
 const cfg = loadConfig();
 const db = openDb(cfg.dbPath);
@@ -18,6 +20,7 @@ const auth = initAuth(db, cfg);
 const { app: api, ctx } = buildApi(db, cfg, auth);
 
 onEvent(webhookListener(db));
+setWhoopRescore(() => rescore(db));
 for (const i of INTEGRATIONS) if (i.onEvent) onEvent((e) => (integrationRow(db, i.id).enabled ? i.onEvent!(ctx, e) : undefined));
 setInterval(() => {
   for (const i of INTEGRATIONS) void runIntegration(ctx, i).catch(() => {});

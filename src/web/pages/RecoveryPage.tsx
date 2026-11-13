@@ -29,7 +29,10 @@ export function RecoveryPage() {
       <div style={{ maxWidth: 260, margin: "0 auto" }}>
         <Dial label="Recovery" fraction={(r.score ?? 0) / 100} color={recoveryColor(r.score)} value={r.score != null ? String(r.score) : "…"} unit={r.score != null ? "%" : undefined} pending={r.score == null} />
       </div>
-      <p style={{ textAlign: "center", margin: "4px 0 20px" }} className="muted">{r.band ? BAND[r.band] : "Still learning your baseline."}</p>
+      <p style={{ textAlign: "center", margin: "4px 0 20px" }} className="muted">
+        {r.band ? BAND[r.band] : "Still learning your baseline."}
+        {ov.data.whoop?.recovery != null && <><br /><span className="tiny">WHOOP scored this night {ov.data.whoop.recovery}%{r.raw != null && r.raw !== r.score ? ` · before your personal calibration OpenWhoop said ${r.raw}%` : ""}</span></>}
+      </p>
 
       <div className="grid2">
         <div className="stack">

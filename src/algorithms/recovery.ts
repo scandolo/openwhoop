@@ -44,6 +44,7 @@ export const recoveryBand = (r: number): RecoveryBand => (r >= 67 ? "green" : r 
 
 export interface RecoveryResult {
   score: number | null; // null while calibrating
+  raw: number | null; // before any personal offset (what calibration fits against)
   band: RecoveryBand | null;
   calibrating: boolean;
   contributions: { hrv: number; rhr: number; resp: number; sleep: number }; // logit-scale terms, for the "why" view
@@ -53,10 +54,11 @@ export interface RecoveryResult {
 /** WHOOP shows a coloured score after 3 recoveries; we need 3 baseline nights. */
 export const CALIBRATION_NIGHTS = 3;
 
-export function recovery(v: NightVitals, sleepPerformance: number, b: Baseline | null): RecoveryResult {
+/** `offset` is a personal intercept shift (logit scale) learned from paired WHOOP scores. */
+export function recovery(v: NightVitals, sleepPerformance: number, b: Baseline | null, offset = 0): RecoveryResult {
   const empty = { hrv: 0, rhr: 0, resp: 0, sleep: 0 };
   if (!b || v.hrv === null || v.rhr === null) {
-    return { score: null, band: null, calibrating: true, contributions: empty, deltas: { hrvPct: 0, rhr: 0, resp: 0, skinTemp: null } };
+    return { score: null, raw: null, band: null, calibrating: true, contributions: empty, deltas: { hrvPct: 0, rhr: 0, resp: 0, skinTemp: null } };
   }
   const dHrv = Math.log(v.hrv) - b.lnHrv;
   const dRhr = v.rhr - b.rhr;
@@ -68,7 +70,8 @@ export function recovery(v: NightVitals, sleepPerformance: number, b: Baseline |
     sleep: C.sleepPerf * Math.min(1, sleepPerformance / 100),
   };
   const z = C.intercept + contributions.hrv + contributions.rhr + contributions.resp + contributions.sleep;
-  const score = Math.round(Math.min(99, Math.max(1, 100 * sigmoid(z))));
+  const toScore = (x: number) => Math.round(Math.min(99, Math.max(1, 100 * sigmoid(x))));
+  const score = toScore(z + offset);
   const deltas = {
     hrvPct: 100 * (Math.exp(dHrv) - 1),
     rhr: dRhr,
@@ -76,7 +79,7 @@ export function recovery(v: NightVitals, sleepPerformance: number, b: Baseline |
     skinTemp: v.skinTemp !== null && b.skinTemp !== null ? v.skinTemp - b.skinTemp : null,
   };
   const calibrating = b.nights < CALIBRATION_NIGHTS;
-  return { score: calibrating ? null : score, band: calibrating ? null : recoveryBand(score), calibrating, contributions, deltas };
+  return { score: calibrating ? null : score, raw: calibrating ? null : toScore(z), band: calibrating ? null : recoveryBand(score), calibrating, contributions, deltas };
 }
 
 /**

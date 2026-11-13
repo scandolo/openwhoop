@@ -162,7 +162,13 @@ export class Whoop extends EventTarget {
    * before resolving: only then is the batch acknowledged, which lets the
    * strap free that flash. A failed upload leaves the data on the strap.
    */
-  async syncHistory(onBatch: (frames: Uint8Array[], newestTs: number | null) => Promise<void>, signal?: AbortSignal): Promise<{ frames: number; batches: number }> {
+  async syncHistory(
+    onBatch: (frames: Uint8Array[], newestTs: number | null) => Promise<void>,
+    opts: { signal?: AbortSignal; ack?: boolean } = {},
+  ): Promise<{ frames: number; batches: number; stalled: boolean }> {
+    const { signal, ack: shouldAck = true } = opts;
+    let stalled = false;
+    const seenEnds = new Set<string>();
     await this.syncClock().catch(() => undefined);
     let frames: Uint8Array[] = [];
     let newest: number | null = null;
@@ -188,9 +194,17 @@ export class Whoop extends EventTarget {
         const batch = frames;
         frames = [];
         const ack = m.ack;
+        const key = Array.from(ack).join(",");
+        if (!shouldAck && seenEnds.has(key)) {
+          // companion mode: the strap re-sends a batch it was never told it could free
+          stalled = true;
+          chain.then(() => done());
+          return;
+        }
+        seenEnds.add(key);
         chain = chain
           .then(() => onBatch(batch, newest))
-          .then(() => this.send(commands.ackHistory(ack)))
+          .then(() => (shouldAck ? this.send(commands.ackHistory(ack)) : undefined))
           .then(() => {
             total += batch.length;
             batches++;
@@ -202,7 +216,7 @@ export class Whoop extends EventTarget {
     };
     const idle = window.setInterval(() => {
       if (signal?.aborted) fail(new Error("cancelled"));
-      else if (Date.now() - lastActivity > 30000) chain.then(() => done()); // strap went quiet
+      else if (Date.now() - lastActivity > (shouldAck ? 30000 : 10000)) chain.then(() => done()); // strap went quiet
     }, 1000);
     try {
       await this.request(commands.sendHistory(), Command.SEND_HISTORICAL_DATA).catch(() => undefined);
@@ -212,7 +226,7 @@ export class Whoop extends EventTarget {
       this.dataListener = null;
       if (signal?.aborted) await this.send(commands.abortHistory()).catch(() => undefined);
     }
-    return { frames: total, batches };
+    return { frames: total, batches, stalled };
   }
 
   // ── live heart rate (standard HR profile: HR + RR) ───────────────────

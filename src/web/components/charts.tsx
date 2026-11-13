@@ -19,7 +19,7 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
 }
 
 // ── Dial ──────────────────────────────────────────────────────────────
-export function Dial(props: { fraction: number; color: string; value: string; unit?: string; label: string; onClick?: () => void; pending?: boolean }) {
+export function Dial(props: { fraction: number; color: string; value: string; unit?: string; label: string; sub?: string | null; onClick?: () => void; pending?: boolean }) {
   const r = 52, c = 2 * Math.PI * r;
   const f = Math.max(0, Math.min(1, props.fraction));
   return (
@@ -37,6 +37,7 @@ export function Dial(props: { fraction: number; color: string; value: string; un
         </foreignObject>
       </svg>
       <span className="label">{props.label}</span>
+      {props.sub && <span className="tiny num" style={{ marginTop: -4 }}>{props.sub}</span>}
     </button>
   );
 }

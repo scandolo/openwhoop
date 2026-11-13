@@ -141,6 +141,18 @@ const MIGRATIONS: string[] = [
     last_error TEXT
   );
   `,
+  `
+  -- WHOOP's own scores (official API), for comparison and personal calibration
+  CREATE TABLE whoop_reference (
+    kind TEXT NOT NULL,            -- cycle | recovery | sleep | workout
+    id TEXT NOT NULL,
+    start INTEGER,
+    end INTEGER,
+    data TEXT NOT NULL,
+    PRIMARY KEY (kind, id)
+  );
+  CREATE INDEX whoop_reference_start ON whoop_reference(kind, start);
+  `,
 ];
 
 export type Db = DatabaseSync;

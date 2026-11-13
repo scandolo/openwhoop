@@ -30,9 +30,9 @@ export function Today() {
       <TopBar date={date} prevDate={d.prevDate} nextDate={d.nextDate} latestDate={d.latestDate} onDate={setDate} lastSyncAt={d.device?.last_sync_at} battery={d.device?.battery} />
 
       <div className="dials">
-        <Dial label="Sleep" fraction={(sleep?.performance ?? 0) / 100} color="var(--sleep)" value={sleep ? String(sleep.performance) : "—"} unit={sleep ? "%" : undefined} pending={!sleep} onClick={() => go(`/sleep${dq}`)} />
-        <Dial label="Recovery" fraction={(rec?.score ?? 0) / 100} color={recoveryColor(rec?.score)} value={rec?.score != null ? String(rec.score) : rec?.calibrating ? "…" : "—"} unit={rec?.score != null ? "%" : undefined} pending={rec?.score == null} onClick={() => go(`/recovery${dq}`)} />
-        <Dial label="Strain" fraction={(strain?.strain ?? 0) / 21} color="var(--strain)" value={strain ? strain.strain.toFixed(1) : "—"} pending={!strain} onClick={() => go(`/strain${dq}`)} />
+        <Dial label="Sleep" fraction={(sleep?.performance ?? 0) / 100} color="var(--sleep)" value={sleep ? String(sleep.performance) : "—"} unit={sleep ? "%" : undefined} pending={!sleep} sub={d.whoop?.sleepPerformance != null ? `WHOOP ${d.whoop.sleepPerformance}%` : null} onClick={() => go(`/sleep${dq}`)} />
+        <Dial label="Recovery" fraction={(rec?.score ?? 0) / 100} color={recoveryColor(rec?.score)} value={rec?.score != null ? String(rec.score) : rec?.calibrating ? "…" : "—"} unit={rec?.score != null ? "%" : undefined} pending={rec?.score == null} sub={d.whoop?.recovery != null ? `WHOOP ${d.whoop.recovery}%` : null} onClick={() => go(`/recovery${dq}`)} />
+        <Dial label="Strain" fraction={(strain?.strain ?? 0) / 21} color="var(--strain)" value={strain ? strain.strain.toFixed(1) : "—"} pending={!strain} sub={d.whoop?.strain != null ? `WHOOP ${d.whoop.strain.toFixed(1)}` : null} onClick={() => go(`/strain${dq}`)} />
       </div>
 
       <div className="stack" style={{ marginBottom: 12 }}>

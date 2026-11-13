@@ -11,6 +11,7 @@ import { all, get, now, run, tx, type Db } from "./db.ts";
 import { emit } from "./events.ts";
 import { loadSamples } from "./ingest.ts";
 import { getProfile, localDate, physiology, sleepNeedBaseline, tzOffsetMin } from "./settings.ts";
+import { personalOffset } from "./integrations/whoop.ts";
 
 const H = 3600;
 const DAY = 86400;
@@ -202,6 +203,7 @@ function rebuildCycles(db: Db, dirtyFrom: number) {
   const existing = new Map(all<CycleRow>(db, "SELECT * FROM cycles").map((c) => [c.start, c]));
   const dataEnd = get<{ hi: number }>(db, "SELECT MAX(ts) hi FROM samples")?.hi ?? now();
   const baselineNeed = sleepNeedBaseline(profile);
+  const offset = personalOffset(db);
 
   let baseline: Baseline | null = null;
   const past: (PastNight & { start: number; end: number })[] = [];
@@ -229,7 +231,7 @@ function rebuildCycles(db: Db, dirtyFrom: number) {
     // recovery from this night against the baseline of previous nights
     const enoughSleep = m.asleep >= 2 * H && !m.partial;
     const vitals = { hrv: m.hrv, rhr: m.rhr, resp: m.respRate, skinTemp: m.skinTemp };
-    const rec = enoughSleep ? recovery(vitals, performance, baseline) : null;
+    const rec = enoughSleep ? recovery(vitals, performance, baseline, offset) : null;
     const recJson = rec ? { ...rec, ...vitals, flags: vitalsOutOfRange(rec.deltas), baseline } : null;
     if (enoughSleep) baseline = updateBaseline(baseline, vitals);
 
@@ -268,6 +270,11 @@ function rebuildCycles(db: Db, dirtyFrom: number) {
   const mins = all<{ ts: number; stress: number | null }>(db, "SELECT ts, stress FROM minutes WHERE ts >= ? ORDER BY ts", Math.max(dirtyFrom, dataEnd - DAY));
   const stressEpisodes = highStressEpisodes(mins.map((m) => m.ts), mins.map((m) => m.stress)).map((e) => ({ ...e, peak: Math.round(e.peak * 10) / 10 }));
   return { newlyScored, stressEpisodes };
+}
+
+/** Re-run the recovery/sleep chain (e.g. after a new personal calibration); strains are reused. */
+export function rescore(db: Db) {
+  rebuildCycles(db, now() + 86400);
 }
 
 function cycleStrain(db: Db, from: number, to: number): StrainResult {

@@ -258,6 +258,7 @@ function IntegrationCard({ i, reload }: { i: IntegrationInfo; reload: () => void
         {i.connected ? <button className="btn small ghost" onClick={() => void disconnect()}>Disconnect</button> : <a className="btn small" href={`/api/integrations/${i.id}/connect`} aria-disabled={!i.config.clientId}>Connect</a>}
       </div>
       {i.lastError && <div className="error" style={{ marginTop: 8 }}>{i.lastError}</div>}
+      {i.id === "whoop" && i.connected && <WhoopAgreement />}
       <div className="form-grid" style={{ marginTop: 12 }}>
         {i.fields.map((f) =>
           f.type === "boolean" ? (
@@ -283,6 +284,27 @@ function IntegrationCard({ i, reload }: { i: IntegrationInfo; reload: () => void
     </div>
   );
 }
+
+function WhoopAgreement() {
+  const a = useApi<{ recovery: Agree; strain: Agree; sleepPerformance: Agree; calibration: { offset: number; n: number } | null }>("/api/integrations/whoop/agreement");
+  if (!a.data) return null;
+  const row = (label: string, m: Agree, unit = "") => (
+    <div className="hstack between tiny" key={label}>
+      <span>{label}</span>
+      <span className="num">{m.n} days · {m.mae === null ? "—" : `±${m.mae}${unit}`} · r {m.r ?? "—"}</span>
+    </div>
+  );
+  return (
+    <div className="stack" style={{ gap: 4, marginTop: 12 }}>
+      <span className="label">OpenWhoop vs WHOOP</span>
+      {row("Recovery", a.data.recovery, " pts")}
+      {row("Strain", a.data.strain)}
+      {row("Sleep performance", a.data.sleepPerformance, " pts")}
+      <span className="tiny">{a.data.calibration ? `Personal recovery calibration active (${a.data.calibration.n} paired nights).` : "Personal calibration starts after 14 nights scored by both."}</span>
+    </div>
+  );
+}
+type Agree = { n: number; mae: number | null; r: number | null };
 
 function Webhooks() {
   const r = useApi<{ events: string[]; webhooks: { id: number; url: string; events: string[]; last_status: number | null; last_error: string | null; last_delivery_at: number | null }[] }>("/api/webhooks");

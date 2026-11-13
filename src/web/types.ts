@@ -59,6 +59,7 @@ export interface Overview extends CycleView {
   tonight: { needMin: number; need: NeedBreakdown; wakeAt: number; bedtimes: { goal: number; at: number }[] } | null;
   baselines: { hrv: number | null; rhr: number | null; resp: number | null; recovery: number | null; strain: number | null };
   device: { id: string; name: string | null; battery: number | null; last_sync_at: number | null } | null;
+  whoop: { recovery: number | null; hrv: number | null; rhr: number | null; strain: number | null; sleepPerformance: number | null } | null;
 }
 
 export interface TrendPoint {

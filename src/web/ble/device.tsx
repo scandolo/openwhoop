@@ -28,6 +28,9 @@ interface DeviceState {
   live: LiveBeat | null;
   beats: LiveBeat[]; // last 5 minutes
   keepSynced: boolean;
+  /** Leave data on the strap (never acknowledge batches) so the WHOOP app still gets it. */
+  companion: boolean;
+  notice: string | null;
   nudge: { kind: "stress" | "strain" | "bedtime"; text: string } | null;
 }
 
@@ -38,6 +41,7 @@ interface DeviceApi extends DeviceState {
   sync: () => Promise<void>;
   cancelSync: () => void;
   setKeepSynced: (v: boolean) => void;
+  setCompanion: (v: boolean) => void;
   startLive: () => Promise<void>;
   stopLive: () => Promise<void>;
   dismissNudge: () => void;
@@ -73,6 +77,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     live: null,
     beats: [],
     keepSynced: localStorage.getItem("ow:keepSynced") === "1",
+    companion: localStorage.getItem("ow:companion") !== "0",
+    notice: null,
     nudge: null,
   });
   const set = (p: Partial<DeviceState>) => setS((x) => ({ ...x, ...p }));
@@ -80,6 +86,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const syncing = useRef(false);
   const lastEventId = useRef(0);
   const firedToday = useRef<Record<string, string>>({});
+  const companionRef = useRef(s.companion);
+  companionRef.current = s.companion;
 
   const deviceId = () => strap.serial || strap.name;
 
@@ -132,7 +140,15 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     const progress: SyncProgress = { frames: 0, batches: 0, newestTs: null, startedAt: Date.now() };
     set({ status: "syncing", progress, error: null });
     try {
-      const res = await strap.syncHistory(async (frames, newest) => {
+      const companion = companionRef.current;
+      // in companion mode the strap re-sends what we already have: skip it
+      const { latestTs } = await api<{ latestTs: number | null }>("/api/sync/state");
+      const fresh = (f: Uint8Array) => {
+        if (!companion || !latestTs || f[4] !== 47 || f.length < 15) return true;
+        return new DataView(f.buffer, f.byteOffset).getUint32(11, true) > latestTs;
+      };
+      const res = await strap.syncHistory(async (all, newest) => {
+        const frames = all.filter(fresh);
         for (let i = 0; i < frames.length; i += 4000) {
           await api("/api/ingest", { method: "POST", json: { device: deviceId(), frames: frames.slice(i, i + 4000).map(b64) } });
         }
@@ -140,10 +156,15 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         progress.batches++;
         progress.newestTs = newest;
         set({ progress: { ...progress } });
-      }, abort.current.signal);
+      }, { signal: abort.current.signal, ack: !companion });
       await api("/api/sync/complete", { method: "POST", json: { device: deviceId(), records: res.frames } });
       await api("/api/device", { method: "POST", json: { id: deviceId(), name: strap.name, firmware: strap.firmware || undefined, battery: strap.battery ?? undefined } });
-      set({ status: "connected", progress: null, lastSync: { at: Date.now() / 1000, frames: res.frames } });
+      set({
+        status: "connected",
+        progress: null,
+        lastSync: { at: Date.now() / 1000, frames: res.frames },
+        notice: res.stalled ? "Companion mode: the strap is holding older data for the WHOOP app, so it re-sent the same batch. Let the WHOOP app sync, then sync here again — or turn companion mode off to read everything (the WHOOP app then won't get that data)." : null,
+      });
       dataChanged();
       void automations();
     } catch (e) {
@@ -218,6 +239,10 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     setKeepSynced(v) {
       localStorage.setItem("ow:keepSynced", v ? "1" : "0");
       set({ keepSynced: v });
+    },
+    setCompanion(v) {
+      localStorage.setItem("ow:companion", v ? "1" : "0");
+      set({ companion: v });
     },
     startLive: () => strap.startLive(),
     stopLive: () => strap.stopLive(),

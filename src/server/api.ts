@@ -11,6 +11,7 @@ import { currentPhysiology, processRange, scoreWorkout, workoutById, type SleepR
 import { AlarmSchema, getAlarm, getHaptics, getProfile, getQuestions, HapticsSchema, JournalQuestionsSchema, localDate, ProfileSchema, sleepNeedBaseline, tzOffsetMin } from "./settings.ts";
 import { createWebhook, deliver, listWebhooks } from "./integrations/webhooks.ts";
 import { INTEGRATIONS, integrationRow, runIntegration, saveIntegration, type IntegrationContext } from "./integrations/index.ts";
+import { whoopFor } from "./integrations/whoop.ts";
 import { strainBand, strainTarget, type StrainResult } from "../algorithms/strain.ts";
 import { sleepBand, recommendedBedtime, sleepDebt, sleepNeed } from "../algorithms/sleep-score.ts";
 import { journalInsights, type JournalDay } from "../algorithms/insights.ts";
@@ -119,6 +120,8 @@ export function buildApi(db: Db, cfg: Config, auth: AuthState) {
     return c.json(res);
   });
 
+  app.get("/api/sync/state", (c) => c.json({ latestTs: get<{ hi: number | null }>(db, "SELECT MAX(ts) hi FROM samples")?.hi ?? null }));
+
   app.post("/api/sync/complete", async (c) => {
     const body = z.object({ device: z.string().max(64), records: z.number().int().min(0) }).partial().parse(await c.req.json().catch(() => ({})));
     sched.flush(true);
@@ -164,6 +167,7 @@ export function buildApi(db: Db, cfg: Config, auth: AuthState) {
       stress: { current: isCurrent ? lastStress?.stress ?? null : null, avg: stress?.avg ?? null, minutes: { low: stress?.low ?? 0, medium: stress?.med ?? 0, high: stress?.high ?? 0 } },
       journal: { date: journalDate, answered },
       tonight: isCurrent ? tonightPlan(db) : null,
+      whoop: whoopFor(db, cycle.start),
       baselines: baselines30(db, cycle.start),
       device: get(db, "SELECT * FROM devices ORDER BY last_sync_at DESC NULLS LAST LIMIT 1") ?? null,
     });

@@ -113,6 +113,14 @@ function SyncPanel() {
           <button className="btn small" onClick={() => void d.sync()} disabled={!connected}>Sync now</button>
         </div>
       )}
+      {d.notice && <div className="notice info">{d.notice}</div>}
+      <div className="hstack between" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
+        <div>
+          <div>Companion mode</div>
+          <div className="tiny">Read without freeing the strap's memory, so the official WHOOP app still receives everything. Turn off if you don't use the WHOOP app.</div>
+        </div>
+        <Switch label="Companion mode" checked={d.companion} onChange={d.setCompanion} />
+      </div>
       <div className="hstack between" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
         <div>
           <div>Keep syncing</div>
