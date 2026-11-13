@@ -1,3 +1,5 @@
+import { skinTempC, type HistoryRecord } from "../protocol/history.ts";
+
 // Dense per-second arrays built from stored samples, and 30-second epochs
 // derived from them. Everything downstream (sleep, strain, stress) reads these.
 
@@ -196,10 +198,9 @@ export function epochs(s: Series, t0 = s.start, t1 = s.start + s.length): Epoch[
   return out;
 }
 
-/** Convert a decoded strap record to its stored form. */
-export function recordToSample(r: import("../protocol/history.ts").HistoryRecord): SampleRow {
+/** Convert a decoded strap record to its stored form. HR 0 means off wrist. */
+export function recordToSample(r: HistoryRecord): SampleRow {
   const s = r.sensor;
-  const tempRaw = s?.skinTempRaw ?? 0;
   return {
     ts: r.ts,
     hr: r.hr,
@@ -207,8 +208,8 @@ export function recordToSample(r: import("../protocol/history.ts").HistoryRecord
     gx: s ? s.gravity[0] : null,
     gy: s ? s.gravity[1] : null,
     gz: s ? s.gravity[2] : null,
-    contact: s ? (s.skinContact > 0 ? 1 : 0) : r.hr > 0 ? 1 : 0,
-    tempC: tempRaw >= 100 ? tempRaw * 0.04 : null,
+    contact: r.hr > 0 ? 1 : 0,
+    tempC: s ? skinTempC(s.skinTempRaw) : null,
     spo2Red: s && s.spo2Red > 0 ? s.spo2Red : null,
     spo2Ir: s && s.spo2Ir > 0 ? s.spo2Ir : null,
   };

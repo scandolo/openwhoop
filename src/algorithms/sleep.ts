@@ -11,7 +11,7 @@
 // architecture (no wake→deep jumps, sticky stages). Decoded with Viterbi.
 import { cleanRR, respiratoryRateFromRR, rmssd } from "./hrv.ts";
 import { beatsIn, EPOCH, type Epoch, type Series } from "./series.ts";
-import { clamp, mean, median, quantile } from "./stats.ts";
+import { mean, median, quantile } from "./stats.ts";
 
 export type Stage = "wake" | "light" | "deep" | "rem";
 export const STAGES: Stage[] = ["wake", "light", "deep", "rem"];
@@ -217,7 +217,7 @@ export interface SleepMetrics {
   rhr: number | null; // bpm, same weighting
   respRate: number | null; // breaths/min
   skinTemp: number | null; // °C, median during sleep
-  spo2: number | null; // %, ratio-of-ratios estimate
+  spo2: number | null; // % — always null on WHOOP 4.0 for now
   avgHr: number | null;
   lowestHr: number | null;
 }
@@ -309,37 +309,8 @@ export function sleepMetrics(s: Series, period: SleepPeriod, segs: StageSegment[
     rhr,
     respRate: resp.length >= 3 ? median(resp) : null,
     skinTemp: temps.length ? median(temps) : null,
-    spo2: spo2During(s, period),
+    spo2: null, // not derivable on 4.0: the red/IR channels move in lockstep (docs/protocol.md)
     avgHr: hrs.length ? mean(hrs) : null,
     lowestHr: lowest,
   };
-}
-
-/**
- * Ratio-of-ratios SpO2 over 30 s windows (AC = std, DC = mean of the raw
- * red/IR samples), SpO2 = 110 − 25·R, median over the night. The constants
- * are the textbook transmissive-oximetry calibration, not a WHOOP-specific
- * one, so treat the absolute value as an estimate.
- */
-export function spo2During(s: Series, period: SleepPeriod): number | null {
-  const vals: number[] = [];
-  const i0 = period.start - s.start;
-  for (let i = i0; i + 30 <= i0 + (period.end - period.start); i += 30) {
-    const red: number[] = [];
-    const ir: number[] = [];
-    for (let k = i; k < i + 30; k++) {
-      if (Number.isFinite(s.spo2Red[k]!) && Number.isFinite(s.spo2Ir[k]!)) {
-        red.push(s.spo2Red[k]!);
-        ir.push(s.spo2Ir[k]!);
-      }
-    }
-    if (red.length < 20) continue;
-    const mr = mean(red), mi = mean(ir);
-    const sr = Math.sqrt(mean(red.map((x) => (x - mr) ** 2)));
-    const si = Math.sqrt(mean(ir.map((x) => (x - mi) ** 2)));
-    if (!mr || !mi || !si) continue;
-    const R = sr / mr / (si / mi);
-    vals.push(clamp(110 - 25 * R, 70, 100));
-  }
-  return vals.length >= 10 ? median(vals) : null;
 }

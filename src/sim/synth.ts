@@ -296,16 +296,12 @@ export function simulate(opts: {
       rr,
       version: 12,
       sensor: {
-        ppgGreen: Math.round(5200 + 120 * Math.sin(phase)),
-        ppgRedIr: Math.round(3100 + 60 * Math.sin(phase)),
         gravity: g,
-        skinContact: 1,
-        spo2Red: Math.round(1200 + 6.72 * 1.41 * Math.sin(phase) + r.normal() * 0.5),
-        spo2Ir: Math.round(1500 + 15 * 1.41 * Math.sin(phase) + r.normal() * 0.5),
+        ppgGreen: Math.round(5200 + 120 * Math.sin(phase)),
+        spo2Red: Math.round(1200 + 9 * Math.sin(phase)),
+        spo2Ir: Math.round(1500 + 11 * Math.sin(phase)),
         skinTempRaw: Math.round((s.temp + r.normal() * 0.05) / 0.04),
         ambientLight: night ? 2 : 180,
-        respRaw: 0,
-        signalQuality: s.motion > 0.1 ? 60 : 95,
       },
     });
   }
@@ -321,5 +317,5 @@ function randomPosture(r: Rng, lying: boolean): [number, number, number] {
 }
 
 function sensorOff(g: [number, number, number]) {
-  return { ppgGreen: 0, ppgRedIr: 0, gravity: g, skinContact: 0, spo2Red: 0, spo2Ir: 0, skinTempRaw: 0, ambientLight: 300, respRaw: 0, signalQuality: 0 };
+  return { gravity: g, ppgGreen: 0, spo2Red: 0, spo2Ir: 0, skinTempRaw: 0, ambientLight: 300 };
 }

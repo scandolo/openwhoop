@@ -11,7 +11,8 @@ export interface Packet {
 }
 
 export function encodePacket(p: Packet): Uint8Array {
-  const payloadLen = 3 + p.data.length;
+  // the strap expects the inner payload zero-padded to a multiple of 4
+  const payloadLen = Math.ceil((3 + p.data.length) / 4) * 4;
   const len = payloadLen + 4;
   const out = new Uint8Array(4 + payloadLen + 4);
   const view = new DataView(out.buffer);
@@ -68,12 +69,13 @@ export class FrameAssembler {
         break;
       }
       if (start > 0) this.buf = this.buf.slice(start);
+      if (this.buf.length < 4) break;
       const total = frameLength(this.buf);
-      if (total < 0 || this.buf.length < total) break;
-      if (crc8(this.buf.subarray(1, 3)) !== this.buf[3] || total < 11) {
+      if (crc8(this.buf.subarray(1, 3)) !== this.buf[3] || total < 11 || total > 4100) {
         this.buf = this.buf.slice(1); // not a real header, resync on next SOF
         continue;
       }
+      if (this.buf.length < total) break;
       const frame = this.buf.slice(0, total);
       try {
         out.push({ frame, packet: decodeFrame(frame) });

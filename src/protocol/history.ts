@@ -1,87 +1,100 @@
 // Decoders for packets the strap sends during a history download.
+// Layouts and caveats: docs/protocol.md (field meanings marked "disputed"
+// there are kept raw and labelled experimental in the app).
 import { MetadataType, PacketType } from "./constants.ts";
 import type { Packet } from "./packet.ts";
 
 export interface SensorFields {
+  gravity: [number, number, number]; // g, low-passed accelerometer
   ppgGreen: number;
-  ppgRedIr: number;
-  gravity: [number, number, number]; // g
-  skinContact: number; // 0 = off wrist
-  spo2Red: number;
+  spo2Red: number; // raw; moves in lockstep with spo2Ir on 4.0, so no SpO2
   spo2Ir: number;
-  skinTempRaw: number;
+  skinTempRaw: number; // disputed meaning, see skinTempC()
   ambientLight: number;
-  respRaw: number;
-  signalQuality: number;
 }
 
 /** One stored second of data. */
 export interface HistoryRecord {
   ts: number; // unix seconds (strap clock)
-  hr: number; // bpm, 0 when unknown
+  hr: number; // bpm, 0 = off wrist / unknown
   rr: number[]; // beat-to-beat intervals in ms, 0-4 per record
   version: number; // record layout, carried in the packet seq byte
   sensor?: SensorFields;
 }
 
-const u16 = (v: DataView, o: number) => v.getUint16(o, true);
+const dv = (p: Packet) => new DataView(p.data.buffer, p.data.byteOffset, p.data.byteLength);
 
-function view(p: Packet) {
-  return new DataView(p.data.buffer, p.data.byteOffset, p.data.byteLength);
-}
-
-function readRR(p: Packet, v: DataView): number[] {
-  const n = Math.min(p.data[15] ?? 0, 4);
+function readRR(p: Packet, v: DataView, countAt: number, at: number): number[] {
+  const n = p.data[countAt] ?? 0;
+  if (n > 4) return [];
   const rr: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const x = u16(v, 16 + i * 2);
-    if (x > 0) rr.push(x);
+  for (let i = 0; i < n && at + i * 2 + 2 <= p.data.length; i++) {
+    const x = v.getUint16(at + i * 2, true);
+    if (x >= 200 && x <= 2500) rr.push(x);
   }
   return rr;
 }
 
-/** Full-sensor layout (record versions 12 and 24, >= 77 data bytes). */
-export function isFullSensor(p: Packet): boolean {
-  return p.type === PacketType.HISTORICAL_DATA && (p.seq === 12 || p.seq === 24) && p.data.length >= 77;
-}
-
-export function decodeHistory(p: Packet): HistoryRecord {
-  if (p.type !== PacketType.HISTORICAL_DATA) throw new Error(`not a history packet (type ${p.type})`);
-  if (p.data.length < 24) throw new Error(`history packet too short (${p.data.length} bytes)`);
-  const v = view(p);
-  const rec: HistoryRecord = { ts: v.getUint32(4, true), hr: p.data[14]!, rr: readRR(p, v), version: p.seq };
-  if (isFullSensor(p)) {
-    rec.sensor = {
-      ppgGreen: u16(v, 26),
-      ppgRedIr: u16(v, 28),
-      gravity: [v.getFloat32(33, true), v.getFloat32(37, true), v.getFloat32(41, true)],
-      skinContact: p.data[48]!,
-      spo2Red: u16(v, 61),
-      spo2Ir: u16(v, 63),
-      skinTempRaw: u16(v, 65),
-      ambientLight: u16(v, 67),
-      respRaw: u16(v, 73),
-      signalQuality: u16(v, 75),
+/**
+ * Decode a type-47 record. Returns null for layouts we can't use (no heart
+ * rate, unknown versions) — the raw frame is archived either way.
+ *   v12/v24  full sensor record (≥ 85 data bytes)
+ *   v10      IMU burst (≥ 1188 bytes); gravity = mean accelerometer vector
+ *   v9       HR at d[14]   ·   v7  HR at d[24]
+ */
+export function decodeHistory(p: Packet): HistoryRecord | null {
+  if (p.type !== PacketType.HISTORICAL_DATA || p.data.length < 16) return null;
+  const v = dv(p);
+  const ts = v.getUint32(4, true);
+  const version = p.seq;
+  if ((version === 12 || version === 24) && p.data.length >= 85) {
+    return {
+      ts,
+      hr: p.data[14]!,
+      rr: readRR(p, v, 15, 16),
+      version,
+      sensor: {
+        gravity: [v.getFloat32(33, true), v.getFloat32(37, true), v.getFloat32(41, true)],
+        ppgGreen: v.getUint16(26, true),
+        spo2Red: v.getUint16(61, true),
+        spo2Ir: v.getUint16(63, true),
+        skinTempRaw: v.getUint16(65, true),
+        ambientLight: v.getUint16(67, true),
+      },
     };
   }
-  return rec;
+  if (version === 10 && p.data.length >= 1188) {
+    let x = 0, y = 0, z = 0;
+    for (let i = 0; i < 100; i++) {
+      x += v.getInt16(85 + i * 2, false) / 1875;
+      y += v.getInt16(285 + i * 2, false) / 1875;
+      z += v.getInt16(485 + i * 2, false) / 1875;
+    }
+    return { ts, hr: p.data[14]!, rr: readRR(p, v, 15, 16), version, sensor: { gravity: [x / 100, y / 100, z / 100], ppgGreen: 0, spo2Red: 0, spo2Ir: 0, skinTempRaw: 0, ambientLight: 0 } };
+  }
+  if (version === 9 && p.data.length >= 24) return { ts, hr: p.data[14]!, rr: readRR(p, v, 15, 16), version };
+  if (version === 7 && p.data.length >= 25) return { ts, hr: p.data[24]!, rr: [], version };
+  return null;
 }
 
 export interface HistoryMeta {
   kind: "start" | "end" | "complete" | "other";
   ts?: number;
-  /** Read pointer to acknowledge after a batch (HISTORY_END only). */
+  /** END only: the 8 bytes (trim page + wrap count) to echo back in the ack. */
+  ack?: Uint8Array;
   trim?: number;
+  expected?: number;
 }
 
 export function decodeMetadata(p: Packet): HistoryMeta {
-  const v = view(p);
+  const v = dv(p);
   const ts = p.data.length >= 4 ? v.getUint32(0, true) : undefined;
   switch (p.cmd) {
     case MetadataType.HISTORY_START:
       return { kind: "start", ts };
     case MetadataType.HISTORY_END:
-      return { kind: "end", ts, trim: p.data.length >= 14 ? v.getUint32(10, true) : undefined };
+      if (p.data.length < 18) return { kind: "other", ts };
+      return { kind: "end", ts, ack: p.data.slice(10, 18), trim: v.getUint32(10, true), expected: v.getUint32(6, true) };
     case MetadataType.HISTORY_COMPLETE:
       return { kind: "complete", ts };
     default:
@@ -89,13 +102,18 @@ export function decodeMetadata(p: Packet): HistoryMeta {
   }
 }
 
-/** Skin temperature in °C from the thermistor ADC (empirical, from openwhoop). */
+/**
+ * Skin temperature (°C) from the u16 at d[65]. Disputed upstream: openwhoop
+ * used raw × 0.04, noop a provisional 33 + (raw − 826) × 0.05, OpenStrap
+ * doubts it is a temperature at all. We use raw × 0.04 and only ever show
+ * deviations from the personal baseline, labelled experimental.
+ */
 export function skinTempC(raw: number): number | null {
-  return raw >= 100 ? raw * 0.04 : null;
+  return raw >= 500 && raw <= 1300 ? raw * 0.04 : null;
 }
 
 /**
- * Inverse of decodeHistory for full-sensor records. Used by the simulator and
+ * Inverse of decodeHistory for the v12/v24 layout. Used by the simulator and
  * tests to produce byte-exact frames the real pipeline can ingest.
  */
 export function encodeHistoryData(rec: HistoryRecord, sequence = 0): Uint8Array {
@@ -110,17 +128,15 @@ export function encodeHistoryData(rec: HistoryRecord, sequence = 0): Uint8Array 
   const s = rec.sensor;
   if (s) {
     v.setUint16(26, s.ppgGreen, true);
-    v.setUint16(28, s.ppgRedIr, true);
     v.setFloat32(33, s.gravity[0], true);
     v.setFloat32(37, s.gravity[1], true);
     v.setFloat32(41, s.gravity[2], true);
-    d[48] = s.skinContact;
     v.setUint16(61, s.spo2Red, true);
     v.setUint16(63, s.spo2Ir, true);
     v.setUint16(65, s.skinTempRaw, true);
     v.setUint16(67, s.ambientLight, true);
-    v.setUint16(73, s.respRaw, true);
-    v.setUint16(75, s.signalQuality, true);
   }
+  v.setUint16(73, 3073, true); // constant in every real capture
+  v.setUint16(75, 3074, true);
   return d;
 }

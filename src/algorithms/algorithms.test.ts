@@ -169,7 +169,7 @@ describe("pipeline on simulated nights", () => {
     expect(m.rhr).toBeLessThan(70);
     expect(m.respRate).toBeGreaterThan(12);
     expect(m.respRate).toBeLessThan(18);
-    expect(m.spo2).toBeGreaterThan(92);
+    expect(m.spo2).toBeNull();
     expect(m.efficiency).toBeGreaterThan(0.8);
     expect(STAGES).toContain("deep");
   });
