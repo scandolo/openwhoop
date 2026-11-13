@@ -33,7 +33,7 @@ export interface NeedBreakdown {
 
 /** Tonight's sleep need, from the baseline, debt, the day's strain and naps. */
 export function sleepNeed(baselineMin: number, debtMin: number, dayStrain: number, napMin: number): NeedBreakdown {
-  const strain = N.strainAbove10 * Math.max(0, dayStrain - 10) + N.strainAbove14 * Math.max(0, dayStrain - 14);
+  const strain = N.strainA * (Math.exp(N.strainB * Math.max(0, dayStrain)) - 1);
   const debt = N.debt * debtMin;
   const naps = N.naps * napMin; // negative coefficient
   return { baseline: baselineMin, debt, strain, naps, total: Math.max(240, baselineMin + debt + strain + naps) };

@@ -18,7 +18,14 @@ it. **Design** means a judgment call made here.
 | Sleep performance (2025 formula) | 3.9 pts |
 | Sleep consistency | 8.0 pts |
 | Sleep debt | 15.6 min |
-| Sleep need | 5.4 min (fitted on all data, not cross-validated) |
+| Sleep need | 5.5 min (fitted on all data, not cross-validated) |
+
+**Second check, on one person's full history:** the maintainer's WHOOP
+history, 397 nights, none of them used for fitting.
+- Recovery: 8.0 pts mean error, r = 0.88. Average 66 against WHOOP's 67.
+- Sleep debt: 7.6 min mean error.
+- The strain term of sleep need: within 1.9 min of the component WHOOP
+  reports.
 
 Connect the WHOOP integration ([integrations.md](integrations.md)) and
 OpenWhoop also learns your **personal** recovery offset from your own paired
@@ -102,16 +109,23 @@ upstream.
 
 ## Sleep need, debt, performance, consistency
 
-**Need** (**fitted**; structure **published**):
+**Need** (structure **published**; WHOOP's per-night breakdown matches it
+exactly):
 
 ```
-need = baseline + 0.948·debt + 5.8 min × max(0, strain − 10)
-                             + 0.9 min × max(0, strain − 14) − 0.85·naps
+need = baseline + 0.946·debt + 3.44·(e^(0.159·strain) − 1) − 0.84·naps
 ```
 
-`strain` is the previous cycle's day strain. The baseline defaults to 7 h 57 m,
-the median of the personal baselines found in the data. Connect the WHOOP
-integration to adopt yours, or set it in Settings.
+- `strain` is the previous cycle's day strain.
+- The strain curve is **fitted** on WHOOP's own "need from strain" component.
+  The WHOOP web app reports it per night; across one member's 311 nights the
+  curve is within 1.9 min. It adds about 5 min after a strain-6 day, 24 min
+  after strain 13 and 48 min after strain 17.
+- Debt and nap coefficients are **fitted** on the public exports, given that
+  curve. Exports only contain the total need, so they can't separate the
+  baseline from the strain term on their own.
+- The baseline defaults to 7 h 51 m. Connect the WHOOP integration to adopt
+  yours, or set it in Settings.
 
 **Debt** (**fitted**). The unmet need of the last 5 nights, decayed:
 

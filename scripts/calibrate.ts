@@ -104,8 +104,14 @@ const sw = zoneWeights(sp);
 log(`Strain: n=${wRows.length} workouts, LOPO MAE ${strainCv.mae.toFixed(2)}, median within-person r ${strainCv.rMedian.toFixed(2)}.`);
 
 // ── Sleep need ─────────────────────────────────────────────────────────
-// need = baseline_person + d·debt + s1·max(0, strain−10) + s2·max(0, strain−14) − n·naps
-type NRow = { person: string; need: number; x: number[] };
+// need = baseline_person + d·debt + strainTerm(strain) − n·naps
+// Exports only contain the total need, so the split between baseline and
+// strain isn't identifiable from them. The strain term's shape is fixed from
+// WHOOP's own need_from_strain component, which the WHOOP web app reports
+// per night: 3.439·(e^(0.159·strain) − 1) min fits one member's 311 nights
+// with a 1.9 min mean error. The rest is fitted here.
+const STRAIN_NEED = { a: 3.439, b: 0.159 };
+type NRow = { person: string; need: number; x: number[]; strain: number };
 const needRows: NRow[] = [];
 const people = exps.map((e) => e.name);
 for (const e of exps) {
@@ -115,13 +121,14 @@ for (const e of exps) {
     if (c.need === null || c.debt === null || prev.dayStrain === null || c.start >= MAY_2025) continue;
     const nap = e.sleeps.filter((s) => s.nap && s.start >= prev.start && s.start < c.start).reduce((a, s) => a + (s.asleep ?? 0), 0);
     const dummies = people.map((p) => (p === e.name ? 1 : 0));
-    needRows.push({ person: e.name, need: c.need, x: [...dummies, c.debt, Math.max(0, prev.dayStrain - 10), Math.max(0, prev.dayStrain - 14), nap] });
+    needRows.push({ person: e.name, need: c.need, x: [...dummies, c.debt, nap], strain: prev.dayStrain });
   }
 }
-const needW = ols(needRows.map((r) => r.x), needRows.map((r) => r.need));
+const strainNeed = (x: number) => STRAIN_NEED.a * (Math.exp(STRAIN_NEED.b * x) - 1);
+const needW = ols(needRows.map((r) => r.x), needRows.map((r) => r.need - strainNeed(r.strain)));
 const k = people.length;
 const baselines = needW.slice(0, k).filter((_, i) => needRows.some((r) => r.x[i] === 1));
-const needMae = mean(needRows.map((r) => Math.abs(r.x.reduce((s, x, i) => s + x * needW[i]!, 0) - r.need)));
+const needMae = mean(needRows.map((r) => Math.abs(r.x.reduce((s, x, i) => s + x * needW[i]!, 0) + strainNeed(r.strain) - r.need)));
 log(`Sleep need: n=${needRows.length} nights (pre-May-2025), in-sample MAE ${needMae.toFixed(1)} min; personal baselines ${baselines.map((b) => (b / 60).toFixed(2) + "h").join(", ")}.`);
 
 // ── Sleep debt ─────────────────────────────────────────────────────────
@@ -205,7 +212,7 @@ const r3 = (x: number) => Math.round(x * 1000) / 1000;
 const constants = {
   recovery: { baselineHalfLifeDays: HALF_LIFE, intercept: r3(recW[0]!), lnHrv: r3(recW[1]!), rhr: r3(recW[2]!), resp: r3(recW[3]!), sleepPerf: r3(recW[4]!) },
   strain: { zoneWeights: sw.map(r3), A: r3(sp[5]!), B: r3(Math.abs(sp[6]!)) },
-  sleepNeed: { defaultBaselineMin: Math.round(median(baselines)), debt: r3(needW[k]!), strainAbove10: r3(needW[k + 1]!), strainAbove14: r3(needW[k + 2]!), naps: r3(needW[k + 3]!) },
+  sleepNeed: { defaultBaselineMin: Math.round(median(baselines)), debt: r3(needW[k]!), naps: r3(needW[k + 1]!), strainA: STRAIN_NEED.a, strainB: STRAIN_NEED.b },
   sleepDebt: { weight: r3(debtP[0]!), decay: r3(debtP[1]!) },
   sleepPerformance: { sufficiency: r3(perfP[0]!), efficiency: r3(perfP[1]!), consistency: r3(perfP[2]!) },
   sleepConsistency: { intercept: r3(consW[0]!), agreement: r3(consW[1]!) },

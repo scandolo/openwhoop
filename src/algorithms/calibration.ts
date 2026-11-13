@@ -22,11 +22,11 @@ export const CALIBRATION = {
     "B": 6.959
   },
   "sleepNeed": {
-    "defaultBaselineMin": 477,
-    "debt": 0.948,
-    "strainAbove10": 5.798,
-    "strainAbove14": 0.898,
-    "naps": -0.847
+    "defaultBaselineMin": 471,
+    "debt": 0.946,
+    "naps": -0.844,
+    "strainA": 3.439,
+    "strainB": 0.159
   },
   "sleepDebt": {
     "weight": 0.296,
