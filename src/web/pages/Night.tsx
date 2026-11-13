@@ -56,8 +56,8 @@ export function Night() {
         const inWindow = nowS >= p.windowStartAt - 300;
         if (p.mode !== "exact" && inWindow) {
           await d.sync();
-          const dec = await api<{ wake: boolean; reason: string }>(`/api/alarm/decision?latestWakeAt=${p.latestWakeAt}`).catch(() => null);
-          if (dec) setStatus(dec.reason);
+          const dec = await api<{ wake: boolean; reason: string; sleeping: boolean }>(`/api/alarm/decision?latestWakeAt=${p.latestWakeAt}`).catch(() => null);
+          if (dec) setStatus(dec.sleeping ? dec.reason : `No fresh sleep data from the strap${d.companion ? " (companion mode may be holding older data for the WHOOP app)" : ""} — the strap will wake you at ${clock(p.latestWakeAt)}.`);
           if (dec?.wake) {
             firedRef.current = true;
             setFired(true);
